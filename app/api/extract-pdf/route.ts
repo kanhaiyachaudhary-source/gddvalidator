@@ -10,13 +10,6 @@ export const maxDuration = 60;
  * multipart/form-data:
  *   - file: PDF binary
  *   - policy_number: string
- *
- * Flow:
- *   1. Lookup policy in database
- *   2. Parse PDF text with pdf-parse
- *   3. Extract cert_number, first_name, last_name, dob via regex
- *   4. Compare against database; ANY mismatch = invalid
- *   5. Return validation result + reasons
  */
 export async function POST(req: NextRequest) {
   let formData: FormData;
@@ -69,16 +62,15 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  // 3. Parse PDF
+  // 3. Parse PDF with unpdf (Mozilla pdfjs engine, handles edge cases)
   let pdfText = '';
   try {
     const fileBlob = fileEntry as Blob;
     const arrayBuffer = await fileBlob.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-    // Dynamic require so Next.js webpack doesn't try to bundle pdf-parse
-    const pdfParse = require('pdf-parse');
-    const pdfData = await pdfParse(buffer);
-    pdfText = (pdfData.text || '').trim();
+    const { extractText, getDocumentProxy } = await import('unpdf');
+    const pdf = await getDocumentProxy(new Uint8Array(arrayBuffer));
+    const result = await extractText(pdf, { mergePages: true });
+    pdfText = (result.text || '').trim();
   } catch (err: any) {
     return NextResponse.json(
       {
@@ -111,7 +103,6 @@ export async function POST(req: NextRequest) {
   const mismatches: string[] = [];
   const reasons: string[] = [];
 
-  // cert_number — exact, case-insensitive
   if (!extracted.cert_number) {
     mismatches.push('cert_number');
     reasons.push('certificate number not found in document');
@@ -124,7 +115,6 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // first_name — case-insensitive, trimmed
   if (!extracted.first_name) {
     mismatches.push('first_name');
     reasons.push('first name not found in document');
@@ -138,7 +128,6 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // last_name — case-insensitive, trimmed
   if (!extracted.last_name) {
     mismatches.push('last_name');
     reasons.push('last name not found in document');
@@ -152,7 +141,6 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // dob — exact match
   if (!extracted.dob) {
     mismatches.push('dob');
     reasons.push('date of birth not found in document');
@@ -165,7 +153,6 @@ export async function POST(req: NextRequest) {
 
   const is_valid = mismatches.length === 0;
 
-  // Auto-mark as validated when fully passing
   if (is_valid) {
     markAsValidated(policy_number);
   }
