@@ -42,20 +42,20 @@ export function extractCertDataFromText(rawText: string): ExtractedCertData {
     /\b(GDC-\d{4}-[A-Z]{2}-\d+)\b/,
   ]);
 
-  // Full Name — multiple patterns including the "certify that" prose form
+  // Full Name — capture EXACTLY first + last (2 capitalized words)
   let fullName = firstMatch(flat, [
-    /This\s+is\s+to\s+certify\s+that\s+([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+){1,3})/i,
-    /certify\s+that\s+([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+){1,3})/i,
-    /Policyholder\s*[:\-]?\s*([A-Za-z][A-Za-z\s.'-]+?)(?=\s+(?:Date|DOB|Issue|Expiry|State|Certificate)|$)/i,
-    /Name\s*[:\-]?\s*([A-Za-z][A-Za-z\s.'-]+?)(?=\s+(?:Date|DOB|Issue|Expiry|State|Certificate)|$)/i,
-    /Holder\s*[:\-]?\s*([A-Za-z][A-Za-z\s.'-]+?)(?=\s+(?:Date|DOB|Issue|Expiry|State|Certificate)|$)/i,
-    /issued\s+to\s+([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+){1,3})/i,
+    /This\s+is\s+to\s+certify\s+that\s+([A-Z][a-z]+\s+[A-Z][a-z]+)/,
+    /certify\s+that\s+([A-Z][a-z]+\s+[A-Z][a-z]+)/,
+    /Policyholder\s*[:\-]?\s*([A-Z][a-z]+\s+[A-Z][a-z]+)/,
+    /Name\s*[:\-]?\s*([A-Z][a-z]+\s+[A-Z][a-z]+)/,
+    /Holder\s*[:\-]?\s*([A-Z][a-z]+\s+[A-Z][a-z]+)/,
+    /issued\s+to\s+([A-Z][a-z]+\s+[A-Z][a-z]+)/,
   ]);
 
   // Fallback: ALL CAPS sequence in flat text, skipping headers
   if (!fullName) {
     const skipWords = ['CERTIFICATE', 'GOOD', 'DRIVER', 'POLICY', 'INSURANCE', 'STATE', 'NUMBER', 'NO', 'DATE', 'BIRTH', 'ISSUE', 'EXPIRY', 'CERTIFIED', 'VALID', 'DEPARTMENT', 'MOTOR', 'VEHICLE', 'OFFICIAL', 'MERIT'];
-    const allMatches = flat.match(/\b[A-Z]{2,}(?:\s+[A-Z]{2,}){1,3}\b/g);
+    const allMatches = flat.match(/\b[A-Z]{2,}\s+[A-Z]{2,}\b/g);
     if (allMatches) {
       for (const candidate of allMatches) {
         const words = candidate.split(/\s+/);
@@ -91,7 +91,7 @@ export function extractCertDataFromText(rawText: string): ExtractedCertData {
     }
   }
 
-  // Fallback: earliest YYYY-MM-DD in document (DOB is older than issue/expiry)
+  // Fallback: earliest YYYY-MM-DD (DOB is older than issue/expiry dates)
   if (!dob) {
     const dateMatches = flat.match(/\b\d{4}-\d{2}-\d{2}\b/g);
     if (dateMatches && dateMatches.length > 0) {
