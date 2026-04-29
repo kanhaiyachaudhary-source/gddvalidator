@@ -1,6 +1,5 @@
 /**
- * Pure regex-based certificate data extractor.
- * No LLM. No external API calls. Fast and deterministic.
+ * Pure regex-based certificate data extractor. No LLM.
  */
 
 export interface ExtractedCertData {
@@ -37,38 +36,25 @@ export function extractCertDataFromText(rawText: string): ExtractedCertData {
   const text = rawText.replace(/\r\n/g, '\n');
   const flat = text.replace(/\s+/g, ' ').trim();
 
-  // -------- Certificate Number --------
+  // Certificate Number
   const certNumber = firstMatch(text, [
     /Certificate\s*(?:No|Number|ID)\.?\s*[:\-]?\s*(GDC-\d{4}-[A-Z]{2}-\d+)/i,
     /\b(GDC-\d{4}-[A-Z]{2}-\d+)\b/,
   ]);
 
-  // -------- Full Name (try labeled patterns first) --------
+  // Full Name — multiple patterns including the "certify that" prose form
   let fullName = firstMatch(flat, [
+    /This\s+is\s+to\s+certify\s+that\s+([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+){1,3})/i,
+    /certify\s+that\s+([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+){1,3})/i,
     /Policyholder\s*[:\-]?\s*([A-Za-z][A-Za-z\s.'-]+?)(?=\s+(?:Date|DOB|Issue|Expiry|State|Certificate)|$)/i,
     /Name\s*[:\-]?\s*([A-Za-z][A-Za-z\s.'-]+?)(?=\s+(?:Date|DOB|Issue|Expiry|State|Certificate)|$)/i,
     /Holder\s*[:\-]?\s*([A-Za-z][A-Za-z\s.'-]+?)(?=\s+(?:Date|DOB|Issue|Expiry|State|Certificate)|$)/i,
     /issued\s+to\s+([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+){1,3})/i,
   ]);
 
-  // Fallback 1: ALL CAPS name on its own line
+  // Fallback: ALL CAPS sequence in flat text, skipping headers
   if (!fullName) {
-    const lines = text.split('\n');
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (/^[A-Z][A-Z\s]{2,40}[A-Z]$/.test(trimmed)) {
-        const wordCount = trimmed.split(/\s+/).length;
-        if (wordCount >= 2 && wordCount <= 4) {
-          fullName = trimmed;
-          break;
-        }
-      }
-    }
-  }
-
-  // Fallback 2: ALL CAPS sequence anywhere in flat text, skipping known headers
-  if (!fullName) {
-    const skipWords = ['CERTIFICATE', 'GOOD', 'DRIVER', 'POLICY', 'INSURANCE', 'STATE', 'NUMBER', 'NO', 'DATE', 'BIRTH', 'ISSUE', 'EXPIRY'];
+    const skipWords = ['CERTIFICATE', 'GOOD', 'DRIVER', 'POLICY', 'INSURANCE', 'STATE', 'NUMBER', 'NO', 'DATE', 'BIRTH', 'ISSUE', 'EXPIRY', 'CERTIFIED', 'VALID', 'DEPARTMENT', 'MOTOR', 'VEHICLE', 'OFFICIAL', 'MERIT'];
     const allMatches = flat.match(/\b[A-Z]{2,}(?:\s+[A-Z]{2,}){1,3}\b/g);
     if (allMatches) {
       for (const candidate of allMatches) {
@@ -83,14 +69,14 @@ export function extractCertDataFromText(rawText: string): ExtractedCertData {
 
   const { first, last } = splitName(fullName);
 
-  // -------- Date of Birth (labeled patterns first) --------
+  // Date of Birth — labeled patterns
   let dob = firstMatch(flat, [
     /Date\s*of\s*Birth\s*[:\-]?\s*(\d{4}-\d{2}-\d{2})/i,
     /DOB\s*[:\-]?\s*(\d{4}-\d{2}-\d{2})/i,
     /Born\s*[:\-]?\s*(\d{4}-\d{2}-\d{2})/i,
   ]);
 
-  // Fallback: DD/MM/YYYY format → normalize to YYYY-MM-DD
+  // DD/MM/YYYY format
   if (!dob) {
     const dmy = firstMatch(flat, [
       /Date\s*of\s*Birth\s*[:\-]?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{4})/i,
@@ -105,7 +91,7 @@ export function extractCertDataFromText(rawText: string): ExtractedCertData {
     }
   }
 
-  // Fallback: pick the EARLIEST YYYY-MM-DD in document (DOB is older than issue/expiry)
+  // Fallback: earliest YYYY-MM-DD in document (DOB is older than issue/expiry)
   if (!dob) {
     const dateMatches = flat.match(/\b\d{4}-\d{2}-\d{2}\b/g);
     if (dateMatches && dateMatches.length > 0) {
