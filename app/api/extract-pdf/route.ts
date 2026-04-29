@@ -5,12 +5,6 @@ import { extractCertDataFromText } from '@/lib/extractor';
 export const runtime = 'nodejs';
 export const maxDuration = 60;
 
-/**
- * POST /api/extract-pdf
- * multipart/form-data:
- *   - file: PDF binary
- *   - policy_number: string
- */
 export async function POST(req: NextRequest) {
   let formData: FormData;
   try {
@@ -24,6 +18,7 @@ export async function POST(req: NextRequest) {
 
   const fileEntry = formData.get('file');
   const policy_number = formData.get('policy_number') as string | null;
+  const debug = formData.get('debug') === 'true';
 
   if (!fileEntry) {
     return NextResponse.json(
@@ -38,7 +33,6 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // 1. Database lookup
   const expected = findByPolicyNumber(policy_number);
   if (!expected) {
     return NextResponse.json(
@@ -52,7 +46,6 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // 2. Already validated? Skip processing.
   if (isValidated(policy_number)) {
     return NextResponse.json({
       is_valid: true,
@@ -62,7 +55,6 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  // 3. Parse PDF with unpdf (Mozilla pdfjs engine, handles edge cases)
   let pdfText = '';
   try {
     const fileBlob = fileEntry as Blob;
@@ -91,15 +83,14 @@ export async function POST(req: NextRequest) {
         error_type: 'PDF_UNREADABLE',
         failure_reason:
           'PDF appears empty or image-only. Please upload a text-based PDF.',
+        raw_text_length: pdfText.length,
       },
       { status: 422 }
     );
   }
 
-  // 4. Extract fields with regex
   const extracted = extractCertDataFromText(pdfText);
 
-  // 5. Compare each field
   const mismatches: string[] = [];
   const reasons: string[] = [];
 
@@ -152,12 +143,11 @@ export async function POST(req: NextRequest) {
   }
 
   const is_valid = mismatches.length === 0;
-
   if (is_valid) {
     markAsValidated(policy_number);
   }
 
-  return NextResponse.json({
+  const response: any = {
     is_valid,
     policy_number,
     extracted_data: extracted,
@@ -170,5 +160,8 @@ export async function POST(req: NextRequest) {
     mismatches,
     failure_reason: is_valid ? null : reasons.join('; '),
     validated_at: new Date().toISOString(),
-  });
-}
+  };
+
+  // Always include first 600 chars of extracted text for debugging
+  response.raw_text_preview = pdfText.substring(0, 600);
+  response.raw_te
