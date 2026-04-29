@@ -136,6 +136,7 @@ export async function POST(req: NextRequest) {
       first_name: expected.first_name,
       last_name: expected.last_name,
       dob: expected.dob,
+      expiry_date: expected.expiry_date,
     },
     mismatches,
     failure_reason: is_valid ? null : reasons.join('; '),
